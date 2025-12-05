@@ -4,6 +4,13 @@
 using eventhub_custom_metrics_emitter;
 
 IHost host = Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        if (context.HostingEnvironment.IsDevelopment())
+        {
+            config.AddUserSecrets<Program>();
+        }
+    })
     .ConfigureServices((hostContext, services) =>
     {
         IConfiguration configuration = hostContext.Configuration;

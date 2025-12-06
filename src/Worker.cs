@@ -36,7 +36,7 @@ public class Worker : BackgroundService
 
             _ehEmitter = new(_logger, _cfg, defaultCredential);
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             logger.LogError("{error}", ex.ToString());
         }
@@ -57,7 +57,13 @@ public class Worker : BackgroundService
                 }
                 else
                 {
-                    _logger.LogError("Error sending custom event with status: {status}", res.StatusCode);
+                    var body = await res.Content.ReadAsStringAsync(cancellationToken);
+
+                    _logger.LogError(
+                        "Custom metric POST failed. Status {StatusCode} ({ReasonPhrase}). Body={Body}",
+                        (int)res.StatusCode,
+                        res.ReasonPhrase,
+                        body);
                 }
 
                 await Task.Delay(_cfg.CustomMetricInterval, cancellationToken);

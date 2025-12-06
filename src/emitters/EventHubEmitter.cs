@@ -43,7 +43,7 @@ public class EventHubEmitter
 
         if (string.IsNullOrEmpty(config.ConsumerGroup))
         {
-            _consumerGroups = _emitter.GetAllConsumerGroup(_cfg.EventHubNamespace, _cfg.EventHubName);
+            _consumerGroups = _emitter.GetAllConsumerGroupsAsync(_cfg.EventHubNamespace, _cfg.EventHubName).Result;
         }
         else
         {
@@ -92,7 +92,7 @@ public class EventHubEmitter
                             count: idx + 1,
                             sum: lagInfo.Lag)))));
 
-        return await _emitter.SendCustomMetric(
+        return await _emitter.SendCustomMetricAsync(
             region: _cfg.Region,
             resourceId: _eventhubresourceId,
             metricToSend: emitterdata,

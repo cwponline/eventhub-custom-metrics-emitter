@@ -21,51 +21,60 @@ public class EmitterHelper
 {
     private static readonly HttpClient _httpClient = new();
     private readonly ILogger<Worker> _logger;
-    private readonly TokenStore _TokenStore;
+    private readonly TokenStore _tokenStore;
 
     public EmitterHelper(ILogger<Worker> logger, DefaultAzureCredential defaultAzureCredential)
     {
         _logger = logger;
-        _TokenStore = new TokenStore(
-            defaultAzureCredential);
+        _tokenStore = new TokenStore(defaultAzureCredential);
     }
 
-    public async Task<HttpResponseMessage> SendCustomMetric(
+    public async Task<HttpResponseMessage> SendCustomMetricAsync(
         string? region, string? resourceId, EmitterSchema metricToSend,
         CancellationToken cancellationToken = default)
     {
         if ((region != null) && (resourceId != null))
         {
-            var record = await _TokenStore.RefreshAzureMonitorCredentialOnDemandAsync(cancellationToken);
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", record.Token);
-            _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            var record = await _tokenStore.RefreshAzureMonitorCredentialOnDemandAsync(cancellationToken);
 
             string uri = $"https://{region}.monitoring.azure.com{resourceId}/metrics";
             string jsonString = JsonSerializer.Serialize(metricToSend, _jsonOptions);
 
-            StringContent content = new(
-                content: jsonString,
-                encoding: Encoding.UTF8,
-                mediaType: "application/json");
+            using var request = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = new StringContent(jsonString, Encoding.UTF8, "application/json")
+            };
+
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", record.Token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
             _logger.LogInformation("SendCustomMetric:{uri} with payload:{payload}", uri, jsonString);
 
-            return await _httpClient.PostAsync(uri, content, cancellationToken);
+            return await _httpClient.SendAsync(request, cancellationToken);
         }
 
         return new HttpResponseMessage(HttpStatusCode.LengthRequired);
     }
 
-    public string[] GetAllConsumerGroup(string eventhubNamespace, string eventhub)
+    public async Task<string[]> GetAllConsumerGroupsAsync(
+        string eventhubNamespace,
+        string eventhub,
+        CancellationToken cancellationToken = default)
     {
-        var ehRecord = _TokenStore.RefreshAzureEventHubCredentialOnDemand();
+        var ehRecord = _tokenStore.RefreshAzureEventHubCredentialOnDemand();
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ehRecord.Token);
 
         string uri = $"https://{eventhubNamespace}.servicebus.windows.net/{eventhub}/consumergroups?timeout=60&api-version=2014-01";
 
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ehRecord.Token);
+
         _logger.LogInformation("GetAllConsumerGroup:{uri}", uri);
-        var response = _httpClient.GetAsync(uri).Result.Content.ReadAsStringAsync().Result;
-        var doc = XDocument.Parse(response);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        var doc = XDocument.Parse(responseBody);
         var entries = from item in doc.Root!.
                       Descendants().
                       Where(i => i.Name.LocalName == "entry").
@@ -78,13 +87,13 @@ public class EmitterHelper
 
     public ValueTask<AccessTokenAndExpiration> RefreshAzureEventHubCredentialOnDemandAsync(CancellationToken cancellationToken = default)
     {
-        return _TokenStore.RefreshAzureEventHubCredentialOnDemandAsync(cancellationToken);
+        return _tokenStore.RefreshAzureEventHubCredentialOnDemandAsync(cancellationToken);
     }
 
     public ValueTask<AccessTokenAndExpiration> RefreshCredentialOnDemandAsync(string audience,
         CancellationToken cancellationToken = default)
     {
-        return _TokenStore.RefreshCredentialOnDemand(audience, cancellationToken);
+        return _tokenStore.RefreshCredentialOnDemand(audience, cancellationToken);
     }
 
     private static JsonSerializerOptions _jsonOptions = CreateJsonOptions();
